@@ -1,6 +1,6 @@
-# Human-in-the-Loop Slack MCP Server (TypeScript)
+# Human-in-the-Loop Slack MCP Server
 
-A TypeScript implementation of the Human-in-the-Loop MCP server that enables AI assistants to request information from humans via Slack.
+A Model Context Protocol (MCP) server that enables AI assistants to request information from humans via Slack. This server acts as a bridge between AI systems and human experts, allowing AI to ask questions and receive responses through Slack when it needs human knowledge or clarification.
 
 ## Quick Start with npx
 
@@ -38,11 +38,15 @@ Add to your Claude Desktop configuration (`~/Library/Application Support/Claude/
 ## Features
 
 - 🤖 MCP-compliant server for AI assistant integration
-- 💬 Real-time Slack communication using Socket Mode
-- 🧵 Thread-based conversations for context
+- 💬 Dual-mode Slack integration:
+  - **Socket Mode**: Real-time WebSocket connection for instant messaging
+  - **Simple Mode**: Polling-based fallback for environments where Socket Mode doesn't work (e.g., Node.js v24)
+- 🧵 Thread-based conversations for maintaining context
 - ⏱️ 60-second timeout for human responses
-- 🔍 Comprehensive debugging tools
+- 📢 User mentions (`@username`) for notifications
+- 🔍 Comprehensive debugging and logging capabilities
 - 🔐 Secure token handling
+- 🚀 Dynamic handler initialization for faster startup
 
 ## Prerequisites
 
@@ -69,8 +73,8 @@ If you want to install locally instead of using npx:
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/YOUR_USERNAME/human-in-the-loop-slack-mcp.git
-cd human-in-the-loop-slack-mcp
+git clone https://github.com/YOUR_USERNAME/AskOnSlackMCP.git
+cd AskOnSlackMCP
 ```
 
 2. Install dependencies:
@@ -141,7 +145,7 @@ If you've installed locally:
     "human-in-the-loop-slack": {
       "command": "node",
       "args": [
-        "/path/to/human-in-the-loop-slack-mcp/dist/index.js",
+        "/path/to/AskOnSlackMCP/dist/index.js",
         "--slack-bot-token", "xoxb-your-token",
         "--slack-app-token", "xapp-your-token",
         "--slack-channel-id", "C1234567890",
@@ -158,7 +162,7 @@ If you've installed locally:
 Main tool for asking questions to humans via Slack.
 
 **Parameters:**
-- `question` (string): The question to ask the human
+- `question` (string): The question to ask the human. Be specific and provide context.
 
 **Example:**
 ```json
@@ -170,17 +174,10 @@ Main tool for asking questions to humans via Slack.
 }
 ```
 
-### `check_environment`
-Debug tool to verify environment variables are set correctly.
-
-### `test_slack_connection`
-Send a test message to verify Slack connectivity.
-
-### `check_message_log`
-View the last 50 received Slack messages for debugging.
-
-### `check_socket_status`
-Check the Socket Mode connection status.
+**Usage Notes:**
+- The bot will mention the specified user in the Slack channel
+- The human has 60 seconds to respond in a thread
+- The tool will return the human's response or timeout after 60 seconds
 
 ## Development
 
@@ -197,10 +194,12 @@ Check the Socket Mode connection status.
 
 ```
 src/
-├── index.ts         # Main MCP server implementation
-├── slack-client.ts  # Slack client and handler
-├── human.ts         # Abstract Human interface
-└── types.ts         # TypeScript type definitions
+├── index.ts                  # Main MCP server implementation
+├── bin.ts                    # Binary entry point for npx execution
+├── human.ts                  # Abstract Human interface
+├── slack-client.ts           # Socket Mode Slack implementation
+├── simple-slack-client.ts    # Polling-based Slack implementation
+└── types.ts                  # TypeScript type definitions
 ```
 
 ## Troubleshooting
@@ -209,16 +208,23 @@ src/
    - Verify all tokens are correct
    - Check that the bot is invited to the channel
    - Ensure Socket Mode is enabled in your Slack app
+   - If using Node.js v24, the server will automatically use Simple Mode
 
 2. **No Response Received**
-   - Verify the user ID is correct
-   - Ensure the user responds in the message thread
-   - Check message logs with `check_message_log` tool
+   - Verify the user ID is correct (format: U1234567890)
+   - Ensure the user responds in the message thread, not the main channel
+   - Check that the bot has permission to read messages in the channel
 
 3. **Authentication Errors**
+   - Bot token should start with `xoxb-`
+   - App token should start with `xapp-`
    - Regenerate tokens if needed
-   - Verify bot has required scopes
-   - Check environment variables with `check_environment` tool
+   - Verify bot has required scopes: `chat:write`, `channels:read`, `users:read`
+
+4. **Node.js v24 Compatibility**
+   - The server automatically detects Node.js v24 and switches to Simple Mode
+   - Simple Mode uses polling instead of WebSocket connections
+   - Performance may be slightly reduced but functionality remains the same
 
 ## License
 
