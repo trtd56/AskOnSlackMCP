@@ -7,7 +7,7 @@ A Model Context Protocol (MCP) server that enables AI assistants to request info
 Run directly from GitHub without installation:
 
 ```bash
-npx github:YOUR_USERNAME/human-in-the-loop-slack-mcp \
+npx github:trtd56/AskOnSlackMCP \
   --slack-bot-token "xoxb-your-bot-token" \
   --slack-app-token "xapp-your-app-token" \
   --slack-channel-id "C1234567890" \
@@ -24,7 +24,7 @@ Add to your Claude Desktop configuration (`~/Library/Application Support/Claude/
     "slack-human": {
       "command": "npx",
       "args": [
-        "github:YOUR_USERNAME/human-in-the-loop-slack-mcp",
+        "github:trtd56/AskOnSlackMCP",
         "--slack-bot-token", "xoxb-your-actual-token",
         "--slack-app-token", "xapp-your-actual-token", 
         "--slack-channel-id", "C1234567890",
@@ -73,7 +73,7 @@ If you want to install locally instead of using npx:
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/YOUR_USERNAME/AskOnSlackMCP.git
+git clone https://github.com/trtd56/AskOnSlackMCP.git
 cd AskOnSlackMCP
 ```
 
@@ -124,7 +124,7 @@ Configure your MCP client to use this server directly from GitHub:
     "human-in-the-loop-slack": {
       "command": "npx",
       "args": [
-        "github:YOUR_USERNAME/human-in-the-loop-slack-mcp",
+        "github:trtd56/AskOnSlackMCP",
         "--slack-bot-token", "xoxb-your-token",
         "--slack-app-token", "xapp-your-token",
         "--slack-channel-id", "C1234567890",
