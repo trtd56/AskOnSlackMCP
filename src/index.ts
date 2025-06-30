@@ -80,11 +80,11 @@ async function main() {
   // Store config in closure for tool handlers
   const currentConfig = config;
 
-  // Tool: ask_human only
+  // Tool: ask_on_slack only
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
       {
-        name: 'ask_human',
+        name: 'ask_on_slack',
         description: `Ask a human for information that only they would know.
         
         Use this tool when you need information such as:
@@ -110,7 +110,7 @@ async function main() {
     const { name, arguments: args } = request.params;
 
     switch (name) {
-      case 'ask_human': {
+      case 'ask_on_slack': {
         const { question } = args as { question: string };
         
         // Version check to ensure new code is running

@@ -154,7 +154,7 @@ If you've installed locally:
 
 ## Available Tools
 
-### `ask_human`
+### `ask_on_slack`
 Main tool for asking questions to humans via Slack.
 
 **Parameters:**
@@ -163,7 +163,7 @@ Main tool for asking questions to humans via Slack.
 **Example:**
 ```json
 {
-  "tool": "ask_human",
+  "tool": "ask_on_slack",
   "arguments": {
     "question": "What is the API endpoint for the production server?"
   }
