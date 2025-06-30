@@ -1,0 +1,31 @@
+# Source files (only publish compiled JS)
+src/
+*.ts
+!*.d.ts
+
+# Config files
+tsconfig.json
+.env
+.env.*
+
+# Development files
+test-server.js
+*.log
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+*.tsbuildinfo
+
+# Keep the dist directory
+!dist/
