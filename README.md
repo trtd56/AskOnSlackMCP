@@ -38,15 +38,14 @@ Add to your Claude Desktop configuration (`~/Library/Application Support/Claude/
 ## Features
 
 - 🤖 MCP-compliant server for AI assistant integration
-- 💬 Dual-mode Slack integration:
-  - **Socket Mode**: Real-time WebSocket connection for instant messaging
-  - **Simple Mode**: Polling-based fallback for environments where Socket Mode doesn't work (e.g., Node.js v24)
+- 💬 Real-time Slack integration via Socket Mode WebSocket connection
 - 🧵 Thread-based conversations for maintaining context
 - ⏱️ 60-second timeout for human responses
 - 📢 User mentions (`@username`) for notifications
 - 🔍 Comprehensive debugging and logging capabilities
 - 🔐 Secure token handling
 - 🚀 Dynamic handler initialization for faster startup
+- ⚡ Optimized for instant response detection with event-driven architecture
 
 ## Prerequisites
 
@@ -198,7 +197,6 @@ src/
 ├── bin.ts                    # Binary entry point for npx execution
 ├── human.ts                  # Abstract Human interface
 ├── slack-client.ts           # Socket Mode Slack implementation
-├── simple-slack-client.ts    # Polling-based Slack implementation
 └── types.ts                  # TypeScript type definitions
 ```
 
@@ -208,7 +206,6 @@ src/
    - Verify all tokens are correct
    - Check that the bot is invited to the channel
    - Ensure Socket Mode is enabled in your Slack app
-   - If using Node.js v24, the server will automatically use Simple Mode
 
 2. **No Response Received**
    - Verify the user ID is correct (format: U1234567890)
@@ -221,10 +218,10 @@ src/
    - Regenerate tokens if needed
    - Verify bot has required scopes: `chat:write`, `channels:read`, `users:read`
 
-4. **Node.js v24 Compatibility**
-   - The server automatically detects Node.js v24 and switches to Simple Mode
-   - Simple Mode uses polling instead of WebSocket connections
-   - Performance may be slightly reduced but functionality remains the same
+4. **Performance Optimization**
+   - The server uses event-driven architecture for instant response detection
+   - WebSocket connection ensures real-time message delivery
+   - Detailed timing logs available with `[TIMING]` prefix for debugging
 
 ## License
 
