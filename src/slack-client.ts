@@ -104,15 +104,15 @@ export class SlackHandler {
     // connected イベントを待つ
     const connectedPromise = new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => {
-        reject(new Error('Socket Mode connection timeout after 10 seconds'));
-      }, 10000);
+        reject(new Error('Socket Mode connection timeout after 5 seconds'));
+      }, 5000);
       
       const checkConnection = () => {
         if (this.socketClient.connected) {
           clearTimeout(timeout);
           resolve();
         } else {
-          setTimeout(checkConnection, 100);
+          setTimeout(checkConnection, 50); // Check more frequently
         }
       };
       
@@ -129,8 +129,8 @@ export class SlackHandler {
       logger.info('Proceeding despite connection warning...');
     }
 
-    // Give the connection more time to stabilize and start receiving events
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // Give the connection a brief moment to stabilize
+    await new Promise(resolve => setTimeout(resolve, 200));
     this.isReady = true;
     
     // Start monitoring the connection
@@ -145,7 +145,7 @@ export class SlackHandler {
           logger.warn('Socket connection lost');
           this.isReady = false;
         }
-        await new Promise(resolve => setTimeout(resolve, 10000)); // Check every 10 seconds
+        await new Promise(resolve => setTimeout(resolve, 5000)); // Check every 5 seconds
       }
     } catch (error) {
       logger.error(`Socket client error: ${error}`);
@@ -164,6 +164,7 @@ export class SlackHandler {
 export class HumanInSlack extends Human {
   public handler?: SlackHandler;
   private pendingResponses: Map<string, PendingResponse> = new Map();
+  private responseResolvers: Map<string, (response: string) => void> = new Map();
   private messageLog: MessageLogEntry[] = [];
   private eventCount: number = 0;
 
@@ -179,7 +180,12 @@ export class HumanInSlack extends Human {
     
     // Set up message handler
     this.handler.socketClient.on('message', async ({ event, ack }) => {
+      const ackStart = Date.now();
       await ack();
+      const ackDuration = Date.now() - ackStart;
+      if (ackDuration > 10) {
+        logger.warn(`Slow ack: ${ackDuration}ms`);
+      }
       await this.handleSocketModeRequest(event);
     });
     
@@ -187,7 +193,8 @@ export class HumanInSlack extends Human {
   }
 
   private async handleSocketModeRequest(event: SlackMessageEvent): Promise<void> {
-    logger.info(`Received event type: ${event.type}`);
+    const eventReceivedTime = Date.now();
+    logger.info(`[TIMING] Event received: type=${event.type}, timestamp=${eventReceivedTime}`);
     
     // Track all events for debugging
     this.eventCount++;
@@ -217,7 +224,8 @@ export class HumanInSlack extends Human {
       const text = event.text || '';
       const threadTs = event.thread_ts;
 
-      logger.info(`Received message - Channel: ${channelId}, User: ${userId}, Thread: ${threadTs}, Text: ${text.slice(0, 50)}...`);
+      const messageReceivedTime = Date.now();
+      logger.info(`[TIMING] Message received: timestamp=${messageReceivedTime}, channel=${channelId}, user=${userId}, thread=${threadTs}, text=${text.slice(0, 50)}...`);
 
       // Check if this message is a response to one of our questions
       logger.info(`Checking against ${this.pendingResponses.size} pending questions...`);
@@ -229,9 +237,19 @@ export class HumanInSlack extends Human {
         if (channelId === questionData.channel && userId === questionData.user) {
           // For thread replies, the thread_ts in the response should match our original message ts
           if (threadTs === questionData.threadTs) {
-            logger.info(`✅ Found matching thread response for question ${questionId}`);
+            const responseFoundTime = Date.now();
+            logger.info(`[TIMING] ✅ Response matched: questionId=${questionId}, timestamp=${responseFoundTime}`);
             questionData.response = text;
             questionData.received = true;
+            
+            // Immediately resolve the promise if there's a resolver waiting
+            const resolver = this.responseResolvers.get(questionId);
+            if (resolver) {
+              logger.info(`[TIMING] Resolving promise immediately`);
+              resolver(text);
+              this.responseResolvers.delete(questionId);
+            }
+            
             break;
           } else {
             logger.info(`Thread mismatch: got ${threadTs}, expected ${questionData.threadTs}`);
@@ -255,10 +273,14 @@ export class HumanInSlack extends Human {
       const messageText = `<@${this.userId}> ${question}`;
 
       // Post message to channel
+      const sendStartTime = Date.now();
+      logger.info(`[TIMING] Sending message: timestamp=${sendStartTime}`);
       const result = await this.handler.webClient.chat.postMessage({
         channel: this.channelId,
         text: messageText,
       });
+      const sendDuration = Date.now() - sendStartTime;
+      logger.info(`[TIMING] Message sent: duration=${sendDuration}ms, ts=${result.ts}`);
 
       if (!result.ok) {
         throw new Error(`Failed to send message: ${result.error}`);
@@ -277,27 +299,40 @@ export class HumanInSlack extends Human {
       };
       this.pendingResponses.set(questionId, pendingResponse);
 
-      // Wait for response with timeout
+      // Wait for response with timeout using Promise-based approach
       const timeout = 60000; // 60 seconds
       const startTime = Date.now();
 
-      while (Date.now() - startTime < timeout) {
-        const response = this.pendingResponses.get(questionId);
-        if (response?.received && response.response) {
-          logger.info(`Received response: ${response.response.slice(0, 50)}...`);
-          // Clean up
-          this.pendingResponses.delete(questionId);
-          return response.response;
-        }
+      try {
+        const responsePromise = new Promise<string>((resolve, reject) => {
+          // Store the resolver for immediate resolution when message arrives
+          this.responseResolvers.set(questionId, resolve);
+          
+          // Set timeout
+          setTimeout(() => {
+            if (this.responseResolvers.has(questionId)) {
+              this.responseResolvers.delete(questionId);
+              reject(new Error('Timeout waiting for human response in Slack'));
+            }
+          }, timeout);
+        });
 
-        await new Promise(resolve => setTimeout(resolve, 500)); // Check every 500ms
+        const response = await responsePromise;
+        const responseTime = Date.now() - startTime;
+        logger.info(`[TIMING] Total response time: ${responseTime}ms`);
+        logger.info(`[TIMING] Response content: ${response.slice(0, 50)}...`);
+        
+        // Clean up
+        this.pendingResponses.delete(questionId);
+        return response;
+        
+      } catch (error) {
+        // Clean up on error
+        this.pendingResponses.delete(questionId);
+        this.responseResolvers.delete(questionId);
+        logger.error(`Timeout waiting for response from user ${this.userId}`);
+        throw error;
       }
-
-      // Timeout reached
-      logger.error(`Timeout waiting for response from user ${this.userId}`);
-      // Clean up
-      this.pendingResponses.delete(questionId);
-      throw new Error('Timeout waiting for human response in Slack');
 
     } catch (error) {
       // Clean up on error

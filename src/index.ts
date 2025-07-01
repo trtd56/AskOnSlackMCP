@@ -12,7 +12,6 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { program } from 'commander';
 import { HumanInSlack, SlackHandler } from './slack-client.js';
-import { SimpleHumanInSlack, SimpleSlackHandler } from './simple-slack-client.js';
 import { Config } from './types.js';
 
 const logger = {
@@ -53,16 +52,8 @@ async function main() {
   const config = parseArgs();
   setupLogging(config.logLevel);
 
-  // Node.js v24 では Socket Mode に問題があるため、シンプルモードを使用
-  const isNodeV24 = process.version.startsWith('v24.');
-  if (isNodeV24) {
-    logger.info('Detected Node.js v24 - using Simple Web API mode instead of Socket Mode');
-  }
-
-  // Create appropriate human handler based on Node.js version
-  const human = isNodeV24 
-    ? new SimpleHumanInSlack(config.slackUserId, config.slackChannelId)
-    : new HumanInSlack(config.slackUserId, config.slackChannelId);
+  // Create human handler
+  const human = new HumanInSlack(config.slackUserId, config.slackChannelId);
 
   // Create MCP server
   const server = new Server(
@@ -120,44 +111,23 @@ async function main() {
         if (!human.handler) {
           logger.info('Initializing Slack handler on demand...');
           
-          if (human instanceof SimpleHumanInSlack) {
-            const slackHandler = new SimpleSlackHandler(currentConfig.slackBotToken);
-            human.setHandler(slackHandler);
-            
-            try {
-              await slackHandler.start();
-              logger.info(`Simple Slack handler initialized: isReady=${slackHandler.isReady}`);
-            } catch (error) {
-              logger.error(`Failed to initialize Simple Slack handler: ${error}`);
-              const errorDetails = error instanceof Error ? error.stack || error.message : String(error);
-              return {
-                content: [
-                  {
-                    type: 'text',
-                    text: `Error: Failed to initialize Slack: ${errorDetails} [Code version: ${currentTime}]`,
-                  },
-                ],
-              };
-            }
-          } else {
-            const slackHandler = new SlackHandler(currentConfig.slackBotToken, currentConfig.slackAppToken);
-            (human as HumanInSlack).setHandler(slackHandler);
-            
-            try {
-              await slackHandler.start();
-              logger.info(`Slack handler initialized: isReady=${slackHandler.isReady}`);
-            } catch (error) {
-              logger.error(`Failed to initialize Slack handler: ${error}`);
-              const errorDetails = error instanceof Error ? error.stack || error.message : String(error);
-              return {
-                content: [
-                  {
-                    type: 'text',
-                    text: `Error: Failed to initialize Slack: ${errorDetails} [Code version: ${currentTime}]`,
-                  },
-                ],
-              };
-            }
+          const slackHandler = new SlackHandler(currentConfig.slackBotToken, currentConfig.slackAppToken);
+          human.setHandler(slackHandler);
+          
+          try {
+            await slackHandler.start();
+            logger.info(`Slack handler initialized: isReady=${slackHandler.isReady}`);
+          } catch (error) {
+            logger.error(`Failed to initialize Slack handler: ${error}`);
+            const errorDetails = error instanceof Error ? error.stack || error.message : String(error);
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: `Error: Failed to initialize Slack: ${errorDetails} [Code version: ${currentTime}]`,
+                },
+              ],
+            };
           }
         }
 
@@ -212,9 +182,8 @@ async function main() {
               };
             }
 
-            // Check if socket client is connected (only for SlackHandler)
-            if ('socketClient' in human.handler!) {
-              const isConnected = human.handler!.socketClient.connected;
+            // Check if socket client is connected
+            const isConnected = human.handler!.socketClient.connected;
               if (!isConnected) {
                 logger.info('Attempting to start socket client...');
 
@@ -247,7 +216,6 @@ async function main() {
                   };
                 }
               }
-            }
           } catch (error) {
             logger.error(`Failed to establish socket connection: ${error}`);
             return {
