@@ -10,7 +10,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import { program } from 'commander';
+import { Command } from 'commander';
 import { HumanInSlack, SlackHandler } from './slack-client.js';
 import { Config } from './types.js';
 
@@ -25,8 +25,11 @@ function setupLogging(logLevel: string = 'INFO'): void {
   logger.info(`Log level set to: ${logLevel}`);
 }
 
-function parseArgs(): Config {
-  program
+export function parseArgs(args?: string[]): Config {
+  // Create a new Command instance to avoid conflicts
+  const cmd = new Command();
+  
+  cmd
     .name('human-in-the-loop-slack')
     .description('Human-in-the-Loop Slack MCP Server - Enables AI assistants to request information from humans via Slack')
     .version('0.1.0')
@@ -35,9 +38,10 @@ function parseArgs(): Config {
     .requiredOption('--slack-channel-id <id>', 'Slack channel ID (C...)')
     .requiredOption('--slack-user-id <id>', 'Slack user ID (U...)')
     .option('--log-level <level>', 'Log level (DEBUG, INFO, WARN, ERROR)', 'INFO')
-    .parse();
+    .exitOverride()
+    .parse(args, { from: 'user' });
 
-  const options = program.opts();
+  const options = cmd.opts();
 
   return {
     slackBotToken: options.slackBotToken,
@@ -184,28 +188,26 @@ async function main() {
 
             // Check if socket client is connected
             const isConnected = human.handler!.socketClient.connected;
-              if (!isConnected) {
-                logger.info('Attempting to start socket client...');
+            if (!isConnected) {
+              logger.info('Socket client not connected, waiting for connection...');
+              
+              // Wait for connection establishment
+              let connectionEstablished = false;
+              for (let i = 0; i < 20; i++) {
+                const connected = human.handler!.socketClient.connected;
+                logger.info(`Checking connection (attempt ${i + 1}): ${connected}`);
 
-                // Start the socket client
-                await human.handler!.socketClient.start();
-                logger.info('Socket start call completed');
-
-                // Wait for connection establishment
-                for (let i = 0; i < 20; i++) {
-                  const connected = human.handler!.socketClient.connected;
-                  logger.info(`Checking connection (attempt ${i + 1}): ${connected}`);
-
-                  if (connected) {
-                    logger.info('Socket connection established');
-                    human.handler!.isReady = true;
-                    break;
-                  }
-                  await new Promise(resolve => setTimeout(resolve, 500));
+                if (connected) {
+                  logger.info('Socket connection established');
+                  human.handler!.isReady = true;
+                  connectionEstablished = true;
+                  break;
                 }
+                await new Promise(resolve => setTimeout(resolve, 500));
+              }
 
-                if (!human.handler!.isReady) {
-                  logger.warn('Socket connection failed to establish after 10 seconds');
+              if (!connectionEstablished) {
+                logger.warn('Socket connection failed to establish after 10 seconds');
                   return {
                     content: [
                       {

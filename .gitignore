@@ -44,3 +44,4 @@ test-*.js
 test-*.sh
 debug-*.js
 test-config.json
+test-output.log

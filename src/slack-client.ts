@@ -17,8 +17,11 @@ export class SlackHandler {
   public webClient: WebClient;
   public socketClient: SocketModeClient;
   public isReady: boolean = false;
+  private startPromise: Promise<void> | null = null;
 
   constructor(botToken: string, appToken: string) {
+    logger.info(`Initializing SlackHandler with tokens: bot=${botToken.slice(0, 10)}..., app=${appToken.slice(0, 10)}...`);
+    
     this.webClient = new WebClient(botToken);
     this.socketClient = new SocketModeClient({
       appToken,
@@ -27,7 +30,7 @@ export class SlackHandler {
         slackApiUrl: 'https://slack.com/api/',
       },
       // ログレベルを調整
-      logLevel: 'warn' as any,
+      logLevel: 'debug' as any, // Changed to debug for more info
     });
     
     // エラーハンドリングを追加
@@ -40,13 +43,58 @@ export class SlackHandler {
       this.isReady = false;
     });
     
+    // Handle reconnection
+    this.socketClient.on('reconnecting', () => {
+      logger.info('Socket Mode reconnecting...');
+      this.isReady = false;
+    });
+    
     // 接続拒否時のハンドリング
     this.socketClient.on('unable_to_socket_mode_start', (error) => {
       logger.error(`Unable to start Socket Mode: ${error.message}`);
     });
+    
+    // 接続成功時のハンドリング
+    this.socketClient.on('connected', () => {
+      logger.info('Socket Mode connected event received');
+      this.isReady = true;
+    });
+    
+    this.socketClient.on('authenticated', () => {
+      logger.info('Socket Mode authenticated event received');
+    });
+    
+    // Debug: Log all events
+    this.socketClient.on('connecting', () => {
+      logger.info('Socket Mode connecting event received');
+    });
+    
+    this.socketClient.on('ready', () => {
+      logger.info('Socket Mode ready event received');
+    });
+    
+    this.socketClient.on('disconnecting', () => {
+      logger.info('Socket Mode disconnecting event received');
+    });
+    
+    // Listen for hello event
+    this.socketClient.on('hello', () => {
+      logger.info('Socket Mode hello event received');
+    });
   }
 
   async start(): Promise<void> {
+    // If already starting, return the existing promise
+    if (this.startPromise) {
+      logger.info('Start already in progress, returning existing promise');
+      return this.startPromise;
+    }
+
+    this.startPromise = this._doStart();
+    return this.startPromise;
+  }
+
+  private async _doStart(): Promise<void> {
     logger.info('Starting Slack client...');
 
     // Test connection
@@ -71,17 +119,48 @@ export class SlackHandler {
     try {
       logger.info('Starting Socket Mode client...');
       
-      // 接続前にイベントハンドラを設定
-      this.socketClient.on('authenticated', () => {
-        logger.info('Socket Mode authenticated');
+      // Check if already connected
+      if (this.socketClient.connected) {
+        logger.info('Socket client already connected');
+        this.isReady = true;
+        return;
+      }
+      
+      // Create a promise to wait for the connected event
+      const connectedPromise = new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error('Socket Mode connection timeout after 30 seconds'));
+        }, 30000); // Increased timeout to 30 seconds
+        
+        // Set up one-time listener for connected event
+        const connectedHandler = () => {
+          logger.info('Socket Mode connected event fired');
+          clearTimeout(timeout);
+          resolve();
+        };
+        
+        // Also listen for error events
+        const errorHandler = (error: Error) => {
+          logger.error(`Socket Mode error during connection: ${error.message}`);
+          clearTimeout(timeout);
+          this.socketClient.off('connected', connectedHandler);
+          reject(error);
+        };
+        
+        this.socketClient.once('connected', connectedHandler);
+        this.socketClient.once('error', errorHandler);
       });
       
-      this.socketClient.on('connected', () => {
-        logger.info('Socket Mode connected');
-      });
+      // Start the socket client
+      logger.info('Calling socketClient.start()...');
+      const startPromise = this.socketClient.start();
       
-      await this.socketClient.start();
-      logger.info('Socket mode client start() completed');
+      // Wait for both the start promise and the connected event
+      await Promise.all([startPromise, connectedPromise]);
+      
+      logger.info('Socket Mode client successfully connected');
+      this.isReady = true;
+      
     } catch (error) {
       logger.error(`Failed to start Socket Mode: ${error}`);
       if (error instanceof Error) {
@@ -94,64 +173,19 @@ export class SlackHandler {
         if (error.message.includes('server explicit disconnect')) {
           throw new Error('Socket Mode connection rejected. Please verify: 1) Socket Mode is enabled in your Slack app, 2) App token has connections:write scope, 3) Event subscriptions are configured.');
         }
+        if (error.message.includes('Socket Mode connection timeout')) {
+          // Add more debugging info
+          logger.error('Socket Mode connection timeout - possible causes:');
+          logger.error('1. Socket Mode may not be enabled in your Slack app');
+          logger.error('2. The app token may not have the correct scopes');
+          logger.error('3. There may be network issues preventing WebSocket connection');
+          logger.error('4. The Slack app may not be properly installed in the workspace');
+        }
       }
       throw error;
     }
-
-    // Socket Mode の接続状態を確認する別の方法を試す
-    logger.info('Waiting for Socket Mode to be ready...');
-    
-    // connected イベントを待つ
-    const connectedPromise = new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error('Socket Mode connection timeout after 5 seconds'));
-      }, 5000);
-      
-      const checkConnection = () => {
-        if (this.socketClient.connected) {
-          clearTimeout(timeout);
-          resolve();
-        } else {
-          setTimeout(checkConnection, 50); // Check more frequently
-        }
-      };
-      
-      // すぐにチェックを開始
-      checkConnection();
-    });
-    
-    try {
-      await connectedPromise;
-      logger.info('Socket client connected successfully');
-    } catch (error) {
-      // 接続できなくても続行を試みる
-      logger.warn(`Socket connection warning: ${error}`);
-      logger.info('Proceeding despite connection warning...');
-    }
-
-    // Give the connection a brief moment to stabilize
-    await new Promise(resolve => setTimeout(resolve, 200));
-    this.isReady = true;
-    
-    // Start monitoring the connection
-    this.runSocketClient();
   }
 
-  private async runSocketClient(): Promise<void> {
-    try {
-      // The SocketModeClient handles reconnection automatically
-      while (true) {
-        if (!this.socketClient.connected) {
-          logger.warn('Socket connection lost');
-          this.isReady = false;
-        }
-        await new Promise(resolve => setTimeout(resolve, 5000)); // Check every 5 seconds
-      }
-    } catch (error) {
-      logger.error(`Socket client error: ${error}`);
-      this.isReady = false;
-    }
-  }
 
   async stop(): Promise<void> {
     if (this.socketClient) {
@@ -260,8 +294,14 @@ export class HumanInSlack extends Human {
   }
 
   async ask(question: string): Promise<string> {
-    if (!this.handler || !this.handler.isReady) {
-      logger.error(`Slack connection check failed - handler: ${!!this.handler}, isReady: ${this.handler?.isReady ?? 'N/A'}`);
+    if (!this.handler) {
+      logger.error('No handler set for HumanInSlack');
+      throw new Error('No Slack handler configured');
+    }
+    
+    // Check both isReady flag and actual connection status
+    if (!this.handler.isReady || !this.handler.socketClient.connected) {
+      logger.error(`Slack connection check failed - isReady: ${this.handler.isReady}, connected: ${this.handler.socketClient.connected}`);
       throw new Error('Slack connection is not ready');
     }
 

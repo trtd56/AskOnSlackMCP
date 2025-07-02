@@ -60,11 +60,17 @@ Add to your Claude Desktop configuration (`~/Library/Application Support/Claude/
    - `channels:read` - Access channel information
    - `users:read` - Access user information
 
-3. **Event Subscriptions**
+3. **Socket Mode**
+   - Enable Socket Mode in your app settings
+   - This is required for the app to receive events in real-time
+
+4. **Event Subscriptions**
    - Enable Events API
    - Subscribe to bot events:
      - `message.channels` - Messages in public channels
      - `message.groups` - Messages in private channels
+     - `message.im` - Direct messages (optional)
+   - Save changes and reinstall the app to your workspace
 
 ## Installation (Optional)
 
@@ -185,6 +191,8 @@ Main tool for asking questions to humans via Slack.
 - `npm run build` - Compile TypeScript
 - `npm run dev` - Run with hot-reloading
 - `npm start` - Run compiled code
+- `npm test` - Run tests with Vitest
+- `npm run test:ci` - Run tests with coverage
 - `npm run lint` - Run ESLint
 - `npm run format` - Format code with Prettier
 - `npm run clean` - Clean build artifacts
@@ -198,7 +206,38 @@ src/
 ├── human.ts                  # Abstract Human interface
 ├── slack-client.ts           # Socket Mode Slack implementation
 └── types.ts                  # TypeScript type definitions
+
+tests/
+├── human.test.ts             # Human abstract class tests
+├── index.test.ts             # CLI argument parsing tests
+├── slack-client.test.ts      # Slack client tests
+└── types.test.ts             # Type definition tests
 ```
+
+### Testing
+
+The project uses Vitest for testing. Tests are located in the `tests/` directory.
+
+To run tests:
+```bash
+npm test              # Run tests in watch mode
+npm run test:ci       # Run tests once with coverage
+```
+
+### CI/CD
+
+The project uses GitHub Actions for continuous integration and deployment.
+
+- **CI Workflow** (`ci.yml`): Runs on every push and pull request
+  - Tests on Node.js 18.x, 20.x, and 22.x
+  - Runs linting and type checking
+  - Generates code coverage reports
+  - Builds the project
+
+- **Release Workflow** (`release.yml`): Runs on version tags
+  - Builds and tests the project
+  - Creates GitHub releases
+  - Publishes to npm (requires NPM_TOKEN secret)
 
 ## Troubleshooting
 
